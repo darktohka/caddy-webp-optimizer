@@ -1,4 +1,4 @@
-package webptransform
+package webpoptimizer
 
 import (
 	"bytes"
