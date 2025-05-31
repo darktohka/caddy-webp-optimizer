@@ -31,11 +31,17 @@ const defaultQuality = 75
 // The default effort level for webp encoding
 const defaultEffort = 4
 
+// The default maximum cache size in bytes, 0 means no limit
+const defaultMaxCacheSize = 0
+
 type WebPTransform struct {
-	Cache   string `json:"cache"`             // Directory to cache webp images
-	Quality int    `json:"quality,omitempty"` // Quality for webp encoding, 0-100, default is 75
-	Effort  int    `json:"effort,omitempty"`  // Effort level for webp encoding, 0-6, default is 4
-	mu      sync.Mutex
+	Cache        string `json:"cache"`                    // Directory to cache webp images
+	Quality      int    `json:"quality,omitempty"`        // Quality for webp encoding, 0-100, default is 75
+	Effort       int    `json:"effort,omitempty"`         // Effort level for webp encoding, 0-6, default is 4
+	MaxCacheSize int64  `json:"max_cache_size,omitempty"` // Maximum size of the cache in bytes, 0 means no limit
+
+	CurrentCacheSize int64 // Current size of the cache in bytes, used for monitoring
+	mu               sync.Mutex
 }
 
 func hashPath(path string) string {
@@ -55,6 +61,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 	m.Cache = filepath.Join(os.TempDir(), "webp_transform")
 	m.Quality = defaultQuality
 	m.Effort = defaultEffort
+	m.MaxCacheSize = defaultMaxCacheSize
 	err := m.UnmarshalCaddyfile(h.Dispenser)
 	return m, err
 }
@@ -93,6 +100,19 @@ func (m *WebPTransform) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				}
 
 				m.Effort = q
+			case "max_cache_size":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+
+				sizeStr := d.Val()
+				size, err := strconv.ParseInt(sizeStr, 10, 64)
+
+				if err != nil {
+					return d.Errf("invalid max_cache_size value: %v", err)
+				}
+
+				m.MaxCacheSize = size
 			default:
 				return d.Errf("unrecognized directive: %s", d.Val())
 			}
@@ -110,6 +130,31 @@ func (*WebPTransform) CaddyModule() caddy.ModuleInfo {
 }
 
 func (m *WebPTransform) Provision(ctx caddy.Context) error {
+	// Ensure the cache directory exists, create it if not
+	if err := os.MkdirAll(m.Cache, 0755); err != nil {
+		return fmt.Errorf("failed to create cache directory: %v", err)
+	}
+
+	// Calculate the current cache size
+	var totalSize int64
+
+	err := filepath.Walk(m.Cache, func(_ string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if !info.IsDir() {
+			totalSize += info.Size()
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to calculate cache size: %v", err)
+	}
+
+	m.CurrentCacheSize = totalSize
 	return nil
 }
 
@@ -126,9 +171,8 @@ func (m *WebPTransform) Validate() error {
 		return fmt.Errorf("effort must be between 0 and 6, got %d", m.Effort)
 	}
 
-	// Ensure the cache directory exists, create it if not
-	if err := os.MkdirAll(m.Cache, 0755); err != nil {
-		return fmt.Errorf("failed to create cache directory: %v", err)
+	if m.MaxCacheSize < 0 {
+		return fmt.Errorf("max_cache_size must be a non-negative integer, got %d", m.MaxCacheSize)
 	}
 
 	return nil
@@ -220,9 +264,40 @@ func (m *WebPTransform) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		rw.WriteToOriginal(w)
 		return nil
 	} else {
+		newFileSize := int64(buf.Len())
+
+		// Check if adding this file would exceed the cache size limit (if set)
+		for m.MaxCacheSize > 0 && newFileSize < m.MaxCacheSize && m.CurrentCacheSize+newFileSize > m.MaxCacheSize {
+			// Remove the largest file in the cache
+			var largestPath string
+			var largestSize int64
+
+			_ = filepath.Walk(m.Cache, func(path string, info os.FileInfo, err error) error {
+				if err != nil || info.IsDir() {
+					return nil
+				}
+				if info.Size() > largestSize {
+					largestSize = info.Size()
+					largestPath = path
+				}
+				return nil
+			})
+
+			if largestPath == "" {
+				break // Nothing to remove
+			}
+
+			if err := os.Remove(largestPath); err == nil {
+				// The file has been removed, upate the current cache size
+				m.CurrentCacheSize -= largestSize
+			}
+		}
+
 		// We managed to save some data, so we write the webp image to the cache
 		if writeErr := os.WriteFile(cachePath, buf.Bytes(), 0644); writeErr != nil {
 			caddy.Log().Error("failed to write webp cache file", zap.String("path", cachePath), zap.Error(writeErr))
+		} else {
+			m.CurrentCacheSize += newFileSize
 		}
 	}
 
