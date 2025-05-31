@@ -30,7 +30,7 @@ func init() {
 }
 
 func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
-	var m WebPTransform
+	m := &WebPTransform{}
 	err := m.UnmarshalCaddyfile(h.Dispenser)
 	return m, err
 }
@@ -77,7 +77,7 @@ func (m *WebPTransform) Validate() error {
 	return nil
 }
 
-func (m WebPTransform) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
+func (m *WebPTransform) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	if !strings.Contains(r.Header.Get("Accept"), "image/webp") {
 		return next.ServeHTTP(w, r)
 	}
