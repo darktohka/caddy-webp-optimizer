@@ -34,7 +34,7 @@ const defaultEffort = 4
 // The default maximum cache size in bytes, 0 means no limit
 const defaultMaxCacheSize = 0
 
-type WebPTransform struct {
+type WebPOptimizer struct {
 	Cache        string `json:"cache"`                    // Directory to cache webp images
 	Quality      int    `json:"quality,omitempty"`        // Quality for webp encoding, 0-100, default is 75
 	Effort       int    `json:"effort,omitempty"`         // Effort level for webp encoding, 0-6, default is 4
@@ -52,13 +52,13 @@ func hashPath(path string) string {
 }
 
 func init() {
-	caddy.RegisterModule(&WebPTransform{})
-	httpcaddyfile.RegisterHandlerDirective("webp_transform", parseCaddyfile)
+	caddy.RegisterModule(&WebPOptimizer{})
+	httpcaddyfile.RegisterHandlerDirective("webp_optimizer", parseCaddyfile)
 }
 
 func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
-	m := new(WebPTransform)
-	m.Cache = filepath.Join(os.TempDir(), "webp_transform")
+	m := new(WebPOptimizer)
+	m.Cache = filepath.Join(os.TempDir(), "webp_optimizer")
 	m.Quality = defaultQuality
 	m.Effort = defaultEffort
 	m.MaxCacheSize = defaultMaxCacheSize
@@ -66,7 +66,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 	return m, err
 }
 
-func (m *WebPTransform) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+func (m *WebPOptimizer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
 		for d.NextBlock(0) {
 			switch d.Val() {
@@ -122,14 +122,14 @@ func (m *WebPTransform) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	return nil
 }
 
-func (*WebPTransform) CaddyModule() caddy.ModuleInfo {
+func (*WebPOptimizer) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		ID:  "http.handlers.webp_transform",
-		New: func() caddy.Module { return new(WebPTransform) },
+		ID:  "http.handlers.webp_optimizer",
+		New: func() caddy.Module { return new(WebPOptimizer) },
 	}
 }
 
-func (m *WebPTransform) Provision(ctx caddy.Context) error {
+func (m *WebPOptimizer) Provision(ctx caddy.Context) error {
 	// Ensure the cache directory exists, create it if not
 	if err := os.MkdirAll(m.Cache, 0755); err != nil {
 		return fmt.Errorf("failed to create cache directory: %v", err)
@@ -158,7 +158,7 @@ func (m *WebPTransform) Provision(ctx caddy.Context) error {
 	return nil
 }
 
-func (m *WebPTransform) Validate() error {
+func (m *WebPOptimizer) Validate() error {
 	if m.Cache == "" {
 		return fmt.Errorf("cache directory must be set")
 	}
@@ -178,7 +178,7 @@ func (m *WebPTransform) Validate() error {
 	return nil
 }
 
-func (m *WebPTransform) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
+func (m *WebPOptimizer) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	// If the request does not accept webp, skip the transformation
 	if !strings.Contains(r.Header.Get("Accept"), "image/webp") {
 		return next.ServeHTTP(w, r)
@@ -357,7 +357,7 @@ func (rw *interceptResponseWriter) WriteToOriginal(w http.ResponseWriter) {
 
 // Interface guards
 var (
-	_ caddy.Module                = (*WebPTransform)(nil)
-	_ caddyhttp.MiddlewareHandler = (*WebPTransform)(nil)
-	_ caddyfile.Unmarshaler       = (*WebPTransform)(nil)
+	_ caddy.Module                = (*WebPOptimizer)(nil)
+	_ caddyhttp.MiddlewareHandler = (*WebPOptimizer)(nil)
+	_ caddyfile.Unmarshaler       = (*WebPOptimizer)(nil)
 )

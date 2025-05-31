@@ -31,8 +31,8 @@ route {
         # Optional: set quality (default: 75)
         quality 75
 
-        # Optional: cache directory (default: /tmp/webp_transform)
-        cache /tmp/webp_transform
+        # Optional: cache directory (default: /tmp/webp_optimizer)
+        cache /tmp/webp_optimizer
 
         # Optional: maximum cache size in bytes (default: no limit)
         max_cache_size 1073741824 # 1 GB
@@ -48,7 +48,7 @@ route {
 {
     "handler": "webp_optimizer",
     "quality": 75,
-    "cache": "/tmp/webp_transform",
+    "cache": "/tmp/webp_optimizer",
     "max_cache_size": 1073741824
 }
 ```
