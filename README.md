@@ -28,13 +28,16 @@ You can configure the WebP optimizer in your Caddyfile or via Caddy's JSON confi
 ```Caddyfile
 route {
     webp_optimizer {
-        # Optional: set quality (default: 75)
+        # Optional: set quality, 0-100 (default: 75)
         quality 75
+
+        # Optional: set effort level, 0-6 (default: 4)
+        effort 6
 
         # Optional: cache directory (default: /tmp/webp_optimizer)
         cache /tmp/webp_optimizer
 
-        # Optional: maximum cache size in bytes (default: no limit)
+        # Optional: maximum cache size in bytes (default: no limit, 0)
         max_cache_size 1073741824 # 1 GB
     }
 
@@ -48,6 +51,7 @@ route {
 {
     "handler": "webp_optimizer",
     "quality": 75,
+    "effort": 4,
     "cache": "/tmp/webp_optimizer",
     "max_cache_size": 1073741824
 }
