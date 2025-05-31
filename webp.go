@@ -22,16 +22,19 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
-	"github.com/kolesa-team/go-webp/encoder"
-	"github.com/kolesa-team/go-webp/webp"
+	"github.com/gen2brain/webp"
 )
 
 // The default quality for webp encoding
 const defaultQuality = 75
 
+// The default effort level for webp encoding
+const defaultEffort = 4
+
 type WebPTransform struct {
-	Cache   string  `json:"cache"`
-	Quality float32 `json:"quality,omitempty"`
+	Cache   string `json:"cache"`             // Directory to cache webp images
+	Quality int    `json:"quality,omitempty"` // Quality for webp encoding, 0-100, default is 75
+	Effort  int    `json:"effort,omitempty"`  // Effort level for webp encoding, 0-6, default is 4
 	mu      sync.Mutex
 }
 
@@ -51,6 +54,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 	m := new(WebPTransform)
 	m.Cache = filepath.Join(os.TempDir(), "webp_transform")
 	m.Quality = defaultQuality
+	m.Effort = defaultEffort
 	err := m.UnmarshalCaddyfile(h.Dispenser)
 	return m, err
 }
@@ -70,13 +74,25 @@ func (m *WebPTransform) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.ArgErr()
 				}
 
-				q, err := strconv.ParseFloat(d.Val(), 32)
+				q, err := strconv.Atoi(d.Val())
 
 				if err != nil {
 					return d.Errf("invalid quality value: %v", err)
 				}
 
-				m.Quality = float32(q)
+				m.Quality = q
+			case "effort":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+
+				q, err := strconv.Atoi(d.Val())
+
+				if err != nil {
+					return d.Errf("invalid effort value: %v", err)
+				}
+
+				m.Effort = q
 			default:
 				return d.Errf("unrecognized directive: %s", d.Val())
 			}
@@ -103,7 +119,11 @@ func (m *WebPTransform) Validate() error {
 	}
 
 	if m.Quality < 0 || m.Quality > 100 {
-		return fmt.Errorf("quality must be between 0 and 100, got %f", m.Quality)
+		return fmt.Errorf("quality must be between 0 and 100, got %d", m.Quality)
+	}
+
+	if m.Effort < 0 || m.Effort > 6 {
+		return fmt.Errorf("effort must be between 0 and 6, got %d", m.Effort)
 	}
 
 	// Ensure the cache directory exists, create it if not
@@ -178,17 +198,9 @@ func (m *WebPTransform) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	}
 
 	// Now, let's encode the image to webp format
-	options, err := encoder.NewLossyEncoderOptions(encoder.PresetDefault, m.Quality)
-
-	if err != nil {
-		// Pass through original response
-		rw.WriteToOriginal(w)
-		return nil
-	}
-
 	var buf bytes.Buffer
 
-	if err := webp.Encode(&buf, img, options); err != nil {
+	if err := webp.Encode(&buf, img, webp.Options{Quality: m.Quality, Lossless: false, Method: m.Effort, Exact: false}); err != nil {
 		// Pass through original response
 		rw.WriteToOriginal(w)
 		return nil
