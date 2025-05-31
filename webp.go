@@ -153,3 +153,9 @@ func (rw *interceptResponseWriter) WriteToOriginal(w http.ResponseWriter) {
     }
     _, _ = io.Copy(w, rw.buf)
 }
+
+// Interface guards
+var (
+    _ caddy.Module                = (*WebPTransform)(nil)
+    _ caddyhttp.MiddlewareHandler = (*WebPTransform)(nil)
+)
