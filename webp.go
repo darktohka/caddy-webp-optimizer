@@ -8,6 +8,7 @@ import (
 	"image/jpeg"
 	"image/png"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -22,7 +23,9 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
-	"github.com/gen2brain/webp"
+
+	"github.com/kolesa-team/go-webp/encoder"
+	"github.com/kolesa-team/go-webp/webp"
 )
 
 // The default quality for webp encoding
@@ -35,10 +38,10 @@ const defaultEffort = 4
 const defaultMaxCacheSize = 0
 
 type WebPOptimizer struct {
-	Cache        string `json:"cache"`                    // Directory to cache webp images
-	Quality      int    `json:"quality,omitempty"`        // Quality for webp encoding, 0-100, default is 75
-	Effort       int    `json:"effort,omitempty"`         // Effort level for webp encoding, 0-6, default is 4
-	MaxCacheSize int64  `json:"max_cache_size,omitempty"` // Maximum size of the cache in bytes, 0 means no limit
+	Cache        string  `json:"cache"`                    // Directory to cache webp images
+	Quality      float32 `json:"quality,omitempty"`        // Quality for webp encoding, 0-100, default is 75
+	Effort       int     `json:"effort,omitempty"`         // Effort level for webp encoding, 0-6, default is 4
+	MaxCacheSize int64   `json:"max_cache_size,omitempty"` // Maximum size of the cache in bytes, 0 means no limit
 
 	CurrentCacheSize int64 // Current size of the cache in bytes, used for monitoring
 	mu               sync.Mutex
@@ -87,7 +90,7 @@ func (m *WebPOptimizer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.Errf("invalid quality value: %v", err)
 				}
 
-				m.Quality = q
+				m.Quality = float32(q)
 			case "effort":
 				if !d.NextArg() {
 					return d.ArgErr()
@@ -242,9 +245,15 @@ func (m *WebPOptimizer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	}
 
 	// Now, let's encode the image to webp format
+	options, err := encoder.NewLossyEncoderOptions(encoder.PresetDefault, m.Quality)
+
+	if err != nil {
+		log.Fatalln(err)
+	}
+
 	var buf bytes.Buffer
 
-	if err := webp.Encode(&buf, img, webp.Options{Quality: m.Quality, Lossless: false, Method: m.Effort, Exact: false}); err != nil {
+	if err := webp.Encode(&buf, img, options); err != nil {
 		// Pass through original response
 		rw.WriteToOriginal(w)
 		return nil
