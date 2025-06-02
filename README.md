@@ -31,9 +31,6 @@ route {
         # Optional: set quality, 0-100 (default: 75)
         quality 75
 
-        # Optional: set effort level, 0-6 (default: 4)
-        effort 6
-
         # Optional: cache directory (default: /tmp/webp_optimizer)
         cache /tmp/webp_optimizer
 
@@ -51,7 +48,6 @@ route {
 {
     "handler": "webp_optimizer",
     "quality": 75,
-    "effort": 4,
     "cache": "/tmp/webp_optimizer",
     "max_cache_size": 1073741824
 }

@@ -16,8 +16,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/zeebo/blake3"
 	"go.uber.org/zap"
-	"golang.org/x/crypto/blake2b"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -31,27 +31,22 @@ import (
 // The default quality for webp encoding
 const defaultQuality = 75
 
-// The default effort level for webp encoding
-const defaultEffort = 4
-
 // The default maximum cache size in bytes, 0 means no limit
 const defaultMaxCacheSize = 0
 
 type WebPOptimizer struct {
 	Cache        string  `json:"cache"`                    // Directory to cache webp images
 	Quality      float32 `json:"quality,omitempty"`        // Quality for webp encoding, 0-100, default is 75
-	Effort       int     `json:"effort,omitempty"`         // Effort level for webp encoding, 0-6, default is 4
 	MaxCacheSize int64   `json:"max_cache_size,omitempty"` // Maximum size of the cache in bytes, 0 means no limit
 
 	CurrentCacheSize int64 // Current size of the cache in bytes, used for monitoring
 	mu               sync.Mutex
 }
 
-func hashPath(path string) string {
-	// Hashes the given path using blake2b
-	h, _ := blake2b.New256(nil)
-	h.Write([]byte(path))
-	return hex.EncodeToString(h.Sum(nil))
+func hashData(data []byte) string {
+	// Hashes the given data using blake3
+	sum := blake3.Sum256(data)
+	return hex.EncodeToString(sum[:])
 }
 
 func init() {
@@ -63,7 +58,6 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 	m := new(WebPOptimizer)
 	m.Cache = filepath.Join(os.TempDir(), "webp_optimizer")
 	m.Quality = defaultQuality
-	m.Effort = defaultEffort
 	m.MaxCacheSize = defaultMaxCacheSize
 	err := m.UnmarshalCaddyfile(h.Dispenser)
 	return m, err
@@ -91,18 +85,6 @@ func (m *WebPOptimizer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				}
 
 				m.Quality = float32(q)
-			case "effort":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-
-				q, err := strconv.Atoi(d.Val())
-
-				if err != nil {
-					return d.Errf("invalid effort value: %v", err)
-				}
-
-				m.Effort = q
 			case "max_cache_size":
 				if !d.NextArg() {
 					return d.ArgErr()
@@ -170,10 +152,6 @@ func (m *WebPOptimizer) Validate() error {
 		return fmt.Errorf("quality must be between 0 and 100, got %d", m.Quality)
 	}
 
-	if m.Effort < 0 || m.Effort > 6 {
-		return fmt.Errorf("effort must be between 0 and 6, got %d", m.Effort)
-	}
-
 	if m.MaxCacheSize < 0 {
 		return fmt.Errorf("max_cache_size must be a non-negative integer, got %d", m.MaxCacheSize)
 	}
@@ -213,7 +191,8 @@ func (m *WebPOptimizer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	}
 
 	// This is an image we can transform! First, let's see if we have it cached
-	hashedName := hashPath(r.URL.Path)
+	data := rw.buf.Bytes()
+	hashedName := hashData(data)
 	cachePath := filepath.Join(m.Cache, hashedName+".webp")
 
 	if stat, err := os.Stat(cachePath); err == nil {
@@ -233,9 +212,9 @@ func (m *WebPOptimizer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	var decodeErr error
 
 	if strings.HasPrefix(contentType, "image/png") {
-		img, decodeErr = png.Decode(bytes.NewReader(rw.buf.Bytes()))
+		img, decodeErr = png.Decode(bytes.NewReader(data))
 	} else {
-		img, decodeErr = jpeg.Decode(bytes.NewReader(rw.buf.Bytes()))
+		img, decodeErr = jpeg.Decode(bytes.NewReader(data))
 	}
 
 	if decodeErr != nil {
